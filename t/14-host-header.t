@@ -1,5 +1,3 @@
-# vim:set ft= ts=4 sw=4 et:
-
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
 
@@ -7,14 +5,22 @@ plan tests => repeat_each() * (blocks() * 3);
 
 my $pwd = cwd();
 
-our $HttpConfig = qq{
-    lua_package_path "$pwd/lib/?.lua;;";
-    error_log logs/error.log debug;
-    resolver 8.8.8.8;
-};
-
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
 $ENV{TEST_NGINX_PWD} ||= $pwd;
+$ENV{TEST_COVERAGE} ||= 0;
+
+our $HttpConfig = qq{
+    lua_package_path "$pwd/lib/?.lua;/usr/local/share/lua/5.1/?.lua;;";
+    error_log logs/error.log debug;
+    resolver 8.8.8.8;
+
+    init_by_lua_block {
+        if $ENV{TEST_COVERAGE} == 1 then
+            jit.off()
+            require("luacov.runner").init()
+        end
+    }
+};
 
 sub read_file {
     my $infile = shift;
@@ -138,7 +144,7 @@ Host: 127.0.0.1:8081
             local http = require "resty.http"
             local httpc = http.new()
 
-            local res, err = httpc:connect("unix:test.sock")
+            local res, err = httpc:connect("unix:.test.sock")
             if not res then
                 ngx.log(ngx.ERR, err)
             end
@@ -151,7 +157,7 @@ Host: 127.0.0.1:8081
             end
         }
     }
---- tcp_listen: test.sock
+--- tcp_listen: .test.sock
 --- tcp_reply: OK
 --- request
 GET /a
