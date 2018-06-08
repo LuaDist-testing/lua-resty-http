@@ -20,9 +20,10 @@ Production ready.
 
 # API
 
-* [new](#name)
+* [new](#new)
 * [connect](#connect)
 * [set_timeout](#set_timeout)
+* [set_timeouts](#set_timeouts)
 * [ssl_handshake](#ssl_handshake)
 * [set_keepalive](#set_keepalive)
 * [get_reused_times](#get_reused_times)
@@ -97,12 +98,12 @@ server {
       httpc:connect("127.0.0.1", 80)
 
       -- And request using a path, rather than a full URI.
-      local res, err = httpc:request{
+      local res, err = httpc:request({
           path = "/helloworld",
           headers = {
               ["Host"] = "example.com",
           },
-      }
+      })
 
       if not res then
         ngx.say("failed to request: ", err)
@@ -162,6 +163,12 @@ An optional Lua table can be specified as the last argument to this method to sp
 `syntax: httpc:set_timeout(time)`
 
 Sets the timeout (in ms) protection for subsequent operations, including the `connect` method.
+
+## set_timeouts
+
+`syntax: httpc:set_timeouts(connect_timeout, send_timeout, read_timeout)`
+
+Sets the connect timeout thresold, send timeout threshold, and read timeout threshold, respetively, in milliseconds, for subsequent socket operations (connect, send, receive, and iterators returned from receiveuntil).
 
 ## ssl_handshake
 
