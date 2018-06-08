@@ -67,7 +67,7 @@ end
 
 
 local _M = {
-    _VERSION = '0.07',
+    _VERSION = '0.08',
 }
 _M._USER_AGENT = "lua-resty-http/" .. _M._VERSION .. " (Lua) ngx_lua/" .. ngx.config.ngx_lua_version
 
@@ -111,6 +111,8 @@ function _M.ssl_handshake(self, ...)
         return nil, "not initialized"
     end
 
+    self.ssl = true
+
     return sock:sslhandshake(...)
 end
 
@@ -122,6 +124,13 @@ function _M.connect(self, ...)
     end
 
     self.host = select(1, ...)
+    self.port = select(2, ...)
+
+    -- If port is not a number, this is likely a unix domain socket connection.
+    if type(self.port) ~= "number" then
+        self.port = nil
+    end
+
     self.keepalive = true
 
     return sock:connect(...)
@@ -189,7 +198,9 @@ function _M.parse_uri(self, uri)
 
         return nil, "bad uri"
     else
-        if not m[3] then
+        if m[3] then
+            m[3] = tonumber(m[3])
+        else
             if m[1] == "https" then
                 m[3] = 443
             else
@@ -250,10 +261,10 @@ end
 local function _receive_status(sock)
     local line, err = sock:receive("*l")
     if not line then
-        return nil, nil, err
+        return nil, nil, nil, err
     end
 
-    return tonumber(str_sub(line, 10, 12)), tonumber(str_sub(line, 6, 8))
+    return tonumber(str_sub(line, 10, 12)), tonumber(str_sub(line, 6, 8)), str_sub(line, 14)
 end
 
 
@@ -487,7 +498,7 @@ end
 
 
 local function _handle_continue(sock, body)
-    local status, version, err = _receive_status(sock)
+    local status, version, reason, err = _receive_status(sock)
     if not status then
         return nil, err
     end
@@ -526,7 +537,19 @@ function _M.send_request(self, params)
         headers["Content-Length"] = #body
     end
     if not headers["Host"] then
-        headers["Host"] = self.host
+        -- If we have a port (i.e. not connected to a unix domain socket), and this
+        -- port is non-standard, append it to the Host heaer.
+        if self.port then
+            if self.ssl and self.port ~= 443 then
+                headers["Host"] = self.host .. ":" .. self.port
+            elseif not self.ssl and self.port ~= 80 then
+                headers["Host"] = self.host .. ":" .. self.port
+            else
+                headers["Host"] = self.host
+            end
+        else
+            headers["Host"] = self.host
+        end
     end
     if not headers["User-Agent"] then
         headers["User-Agent"] = _M._USER_AGENT
@@ -562,7 +585,7 @@ end
 function _M.read_response(self, params)
     local sock = self.sock
 
-    local status, version, err
+    local status, version, reason, err
 
     -- If we expect: continue, we need to handle this, sending the body if allowed.
     -- If we don't get 100 back, then status is the actual status.
@@ -577,7 +600,7 @@ function _M.read_response(self, params)
 
     -- Just read the status as normal.
     if not status then
-        status, version, err = _receive_status(sock)
+        status, version, reason, err = _receive_status(sock)
         if not status then
             return nil, err
         end
@@ -627,6 +650,7 @@ function _M.read_response(self, params)
     else
         return {
             status = status,
+            reason = reason,
             headers = res_headers,
             has_body = has_body,
             body_reader = body_reader,
